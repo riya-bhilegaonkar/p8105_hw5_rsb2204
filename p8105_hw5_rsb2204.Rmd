@@ -2,7 +2,7 @@
 title: "Homework 5"
 author: "Riya Bhilegaonkar"
 date: "2022-11-06"
-output: html_document
+output: github_document
 ---
 
 ```{r, include = FALSE, message=FALSE, warning=FALSE}
@@ -24,21 +24,66 @@ scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 ```
 
+### Problem 1
+The code chunk below imports the data in individual spreadsheets contained in `./data/problem1/`. To do this, I create a dataframe that includes the list of all files in that directory and the complete path to each file. As a next step, I `map` over paths and import data using the `read_csv` function. Finally, I `unnest` the result of `map`.
+
+```{r}
+full_df = 
+  tibble(
+    files = list.files("data/problem1/"),
+    path = str_c("data/problem1/", files)
+  ) %>% 
+  mutate(data = map(path, read_csv)) %>% 
+  unnest()
+```
+
+The result of the previous code chunk isn't tidy -- data are wide rather than long, and some important variables are included as parts of others. The code chunk below tides the data using string manipulations on the file, converting from wide to long, and selecting relevant variables. 
+
+```{r}
+tidy_df = 
+  full_df %>% 
+  mutate(
+    files = str_replace(files, ".csv", ""),
+    group = str_sub(files, 1, 3)) %>% 
+  pivot_longer(
+    week_1:week_8,
+    names_to = "week",
+    values_to = "outcome",
+    names_prefix = "week_") %>% 
+  mutate(week = as.numeric(week)) %>% 
+  select(group, subj = files, week, outcome)
+```
+
+Finally, the code chunk below creates a plot showing individual data, faceted by group. 
+
+```{r}
+tidy_df %>% 
+  ggplot(aes(x = week, y = outcome, group = subj, color = group)) + 
+  geom_point() + 
+  geom_path() + 
+  facet_grid(~group)
+```
+
+This plot suggests high within-subject correlation -- subjects who start above average end up above average, and those that start below average end up below average. Subjects in the control group generally don't change over time, but those in the experiment group increase their outcome in a roughly linear way. 
+
 ### Problem 2
 
 The raw data contains information on more than 52,000 criminal homicides over the past decade in 50 of the largest American cities. The dataset contains the columns of `uid`, `reported`, `victim_last`, `victim_first`, `victim_age`,`victim_sex`, `city`, `state`, `lat`, `lon` and `disposition`. The data describes the location of the killing, whether an arrest was made and basic demographic information about each victim. 
 ```{r}
 homicide_data = read_csv("data/homicide-data.csv") %>%
-  mutate(city_state = str_c(city,    state, sep=", "),unsolved = ifelse((disposition=="Closed without arrest" | disposition =="Open/No arrest"), 1, 0)) 
+  mutate(city_state = str_c(city,    state, sep=", "),unsolved = ifelse((disposition=="Closed without arrest" | disposition =="Open/No arrest"), 1, 0)) %>%
+  mutate(city_state = replace(city_state, city_state == "Tulsa, AL", "Tulsa, OK"))
 
 city_state = homicide_data %>%
   group_by(city_state) %>%
   summarize("Total" = n(), "Unsolved" = sum(unsolved))
 city_state %>%
 knitr::kable()
-
-
 ```
+
+While creating the `city_state` variable I noticed that one of the rows seems to have an incorrect state column value of "AL" - Alabama for the city of Tulsa, which is actually in Oklahoma. To combat this issue, after creating the `city_state` variable using str_c() to concatenate the strings. We additionally create a binary variable of `unsolved` to determine the number of unsolved homicides which are coded as "Closed without arrest" and "Open/No arrest". 
+
+To create the table of the number of cities with the total number of homicides and number of unsolved homicides, we used the grouped by the `city_state` variable and used the summarize function.
 
 Estimating the proportion of homicides that are unsolved:
 ```{r}
@@ -49,7 +94,7 @@ baltimore = homicide_data %>%
   broom::tidy() %>%
    select(estimate, conf.low, conf.high)
 ```
-Hence the estimated proportion is 0.646, the confidence interval for the proportion for the city of Baltimore, MD.
+Hence the estimated proportion is 0.646, the confidence interval for the proportion for the city of Baltimore, MD is (0.628, 0.663).
 
 Running `prop.test` function to estimate the proportion of homicides, that are unsolved for each city. 
 ```{r}
@@ -60,8 +105,9 @@ select(city_state, estimate, conf.low, conf.high)%>%
 knitr::kable()
 ```
 
+The above table uses prop.test for each city and displays the proportion of unsolved homicides and the confidence intervals for each. 
 
-Creating a plot for the estimates and CI's for each city, organizing the cities according to the proportion of unsolved homicides:
+Creating a plot for the estimates and CI's for each city, organizing the cities according to the proportion of unsolved homicides (using fct_reorder):
 ```{r}
 city_state %>%
   mutate(prop = purrr::map2(Unsolved, Total, ~ prop.test(.x, .y, conf.level=0.95) %>%                   broom::tidy())) %>%
@@ -75,7 +121,7 @@ geom_errorbar(aes(ymin=conf.low, ymax=conf.high))
 
 ```
 
-From the plot we see that Tulsa has the lowest proportion of unsolved homicides while Chicago has the highest proportion of unsolved homicides.
+From the plot we see that Richmond, VA has the lowest proportion of unsolved homicides while Chicago has the highest proportion of unsolved homicides.
 
 ## Problem 3
 Setting the design elements
@@ -105,14 +151,13 @@ sim_results_df =
   expand_grid(
     sample_size = 30,
     mu = 0,
-    iter = 1:10
+    iter = 1:5000
   ) %>% 
   mutate(
     estimate_df = map2(sample_size,mu, onesamp_test)
   ) %>% 
   unnest(estimate_df)
 
-sim_results_df
 ```
 
 Now repeating the above for $\mu={1,2,3,4,5,6}$:
@@ -121,14 +166,12 @@ sim_results_df2 =
   expand_grid(
     sample_size = 30,
     mu = c(1,2,3,4,5),
-    iter = 1:10
+    iter = 1:5000
   ) %>% 
   mutate(
     estimate_df = map2(.x=sample_size,.y=mu, ~onesamp_test(n = .x, mu =.y))
   ) %>% 
   unnest(estimate_df)
-
-sim_results_df2
 ```
 
 Making a plot showing the proportion of times the null was rejected on the y axis and the true value of $\mu$ on the x axis:
@@ -136,25 +179,30 @@ Making a plot showing the proportion of times the null was rejected on the y axi
 sim_results_df2 %>%
   group_by(mu) %>%
   filter(p.value < 0.05) %>%
-  summarize(proportion = n()) %>%
-  ggplot(aes(x=mu, y=proportion/5000))+
+  summarize(prop = n()/5000) %>%
+  ggplot(aes(x=mu, y=prop))+
   geom_point()+
+  geom_smooth(method="lm", se=FALSE)+
   labs(x = "True value of mu",
-       y = "Power of the test",
-       title= "Association between effct size and power")
+       y = "Power",
+       title= "Association between effect size and power")
 ```
 
+From the plot we see that there is a positive linear relationship between the true value of $\mu$ and the power and we see that as the value of $\mu$ increases the power of the test is close to 1, which indicates that the hypothesis test is good at detecting a false null hypothesis. This indicates The effect size measures the strength of the relationship between variables in a population. As the effect size increase, the power of the test increases.
 
 Make a plot showing the average $\hat{\mu}$ on the y-axis and the true value of $\mu$ on the x axis, and overlay the average estimate of $\hat{\mu}$ only in samples for which the null was rejected:
 ```{r}
 sim_results_df2 %>%
-  group_by(mu, estimate) %>%
-  ggplot(aes(x=mu, y=mean(estimate)))+
+  group_by(mu) %>%
+  summarize(est_mu = mean(estimate))%>%
+  ggplot(aes(x=mu, y=est_mu))+
   geom_point()+
+geom_point(data=sim_results_df2%>%filter(p.value < 0.05)%>% group_by(mu) %>% summarize(est_mu = mean(estimate)), color="red")+
   labs(x = "True value of mu",
-       y = "Average estimate of mu_hat")
+       y = "Average estimate of mu_hat", main="Estimated Average Mean vs True Mean")
 ```
 
+The sample average $\hat{\mu}$ value across tests for which the null is rejected is approximately equal to the true value of $\mu$ for larger values of $\mu$, which aligns with our reasoning that increases in effect size cause increases in power of a test. Though we do see that in the case of smaller $\mu$ values of 1, 2, 3, the estimates for which the null is rejected are slightly overestimating the value of the true $\mu$, this is due to the fact that these values have a smaller power value, and hence a smaller probability of successfully reject the null hypothesis. 
 
 
 
